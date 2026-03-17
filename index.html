@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Millstone</title>
+    <link rel="stylesheet" href="style.css?v=20260317-2" />
+  </head>
+  <body>
+    <main class="experience">
+      <header class="hero">
+        <p class="eyebrow">dubu dongari</p>
+        <div class="title-row">
+          <h1>Millstone</h1>
+          <button id="resetButton" class="secondary-button title-reset" type="button" disabled>초기화</button>
+        </div>
+        <p class="hero-note">맷돌 게임</p>
+
+        <form id="wishForm" class="wish-form">
+          <label class="sr-only" for="wishInput">고민, 걱정, 감정 입력</label>
+          <input
+            id="wishInput"
+            name="wish"
+            type="text"
+            maxlength="28"
+            placeholder="고민, 걱정, 감정을 적어주세요."
+            autocomplete="off"
+          />
+          <button id="wishSubmit" type="submit">맷돌에 넣기</button>
+        </form>
+
+        <p id="guideText" class="guide-text">
+          불안과 걱정을 콩으로 넣으면, 갈아서 편안과 행복을 주는 두부를 드릴게요.
+        </p>
+
+        <div class="play-controls">
+          <button id="spinButton" class="action-button is-hidden" type="button">맷돌 돌리기</button>
+        </div>
+
+        <div class="progress-wrap" aria-label="갈림 진행도">
+          <div class="progress-track">
+            <div id="progressBar" class="progress-bar"></div>
+          </div>
+          <p id="progressLabel" class="progress-label">준비 중</p>
+        </div>
+      </header>
+
+      <section class="stage">
+        <div id="sparkleLayer" class="sparkle-layer" aria-hidden="true"></div>
+
+        <div id="grinderMachine" class="grinder-machine" aria-label="맷돌 영역">
+          <div class="grinder-photo-wrap">
+            <img
+              id="grinderPhoto"
+              class="grinder-photo"
+              src="millstone_off_1.png"
+              alt="실사 맷돌"
+            />
+            <div id="grinderTarget" class="grinder-target" aria-hidden="true"></div>
+            <div id="loadedWord" class="loaded-word" aria-hidden="true"></div>
+            <div id="resultBubble" class="result-bubble is-hidden" aria-live="polite">
+              <div id="resultShape" class="result-shape shape-tofu"></div>
+              <div class="result-copy">
+                <p id="resultFrom" class="result-from"></p>
+                <h2 id="resultTo" class="result-to"></h2>
+                <p id="resultMessage" class="result-message"></p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div class="brand brand-left">두부동아리</div>
+      <div class="brand brand-right">by. 토푸</div>
+    </main>
+
+    <div id="liveRegion" class="sr-only" aria-live="polite"></div>
+    <script src="script.js?v=20260317-2"></script>
+  </body>
+</html>
