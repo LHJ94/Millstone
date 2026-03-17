@@ -1,5 +1,5 @@
 // Millstone
-// 입력 -> 맷돌에 넣기 -> 단일 버튼으로 갈기 -> 결과 확인 -> 초기화 흐름을 담당합니다.
+// 입력 -> 맷돌에 넣기 -> 원형 손잡이 드래그 -> 결과 확인 -> 초기화 흐름을 담당합니다.
 
 const recipeBook = [
   {
@@ -61,6 +61,31 @@ const fallbackResults = [
     message: "한 걸음 내딛을 수 있을 만큼 마음이 조금 단단해졌어요.",
     color: "#e5c59d",
   },
+  {
+    positive: "안도",
+    message: "조여 있던 마음이 살짝 풀리며 한숨 놓을 틈이 생겼어요.",
+    color: "#e8d8c7",
+  },
+  {
+    positive: "여유",
+    message: "급했던 감정 사이에 조금 천천히 머물 수 있는 공간이 생겼어요.",
+    color: "#ddd7cb",
+  },
+  {
+    positive: "안정",
+    message: "흔들리던 감각이 한층 고르게 가라앉으며 중심을 찾아가고 있어요.",
+    color: "#d8d7cf",
+  },
+  {
+    positive: "포근함",
+    message: "마음 가장자리로 부드러운 온기가 얇게 감싸지기 시작했어요.",
+    color: "#eadbcf",
+  },
+  {
+    positive: "희망",
+    message: "아주 작더라도 앞으로를 떠올릴 수 있는 빛이 은은하게 남았어요.",
+    color: "#efd8b4",
+  },
 ];
 
 const defaultGuide =
@@ -80,15 +105,22 @@ const assetSources = {
 const state = {
   phase: "idle",
   loadedWord: "",
-  spinCount: 0,
-  spinGoal: 0,
-  isAnimating: false,
+  goalTurns: 0,
+  completedTurns: 0,
+  totalRotation: 0,
+  signedRotation: 0,
+  quarterStep: 0,
+  hasLeftLoadedFrame: false,
+  dialAngle: 0,
+  activePointerId: null,
+  lastPointerAngle: null,
+  isDragging: false,
   roundToken: 0,
   spinFrames: [],
-  loadedSrc: assetSources.loaded,
   announceTimer: 0,
   revealWordTimer: 0,
   sparkleCleanupTimer: 0,
+  joltTimer: 0,
 };
 
 const elements = {
@@ -96,7 +128,7 @@ const elements = {
   wishInput: document.getElementById("wishInput"),
   wishSubmit: document.getElementById("wishSubmit"),
   guideText: document.getElementById("guideText"),
-  spinButton: document.getElementById("spinButton"),
+  dialStatus: document.getElementById("dialStatus"),
   resetButton: document.getElementById("resetButton"),
   progressBar: document.getElementById("progressBar"),
   progressLabel: document.getElementById("progressLabel"),
@@ -108,9 +140,12 @@ const elements = {
   sparkleLayer: document.getElementById("sparkleLayer"),
   stage: document.querySelector(".stage"),
   grinderMachine: document.getElementById("grinderMachine"),
+  grinderPhotoWrap: document.querySelector(".grinder-photo-wrap"),
   grinderPhoto: document.getElementById("grinderPhoto"),
   grinderTarget: document.getElementById("grinderTarget"),
   loadedWord: document.getElementById("loadedWord"),
+  dialControl: document.getElementById("dialControl"),
+  dialHandle: document.getElementById("dialHandle"),
   liveRegion: document.getElementById("liveRegion"),
 };
 
@@ -128,13 +163,14 @@ function bindEvents() {
     queueWord(elements.wishInput.value.trim());
   });
 
-  elements.spinButton.addEventListener("click", () => {
-    void spinOnce();
-  });
-
   elements.resetButton.addEventListener("click", () => {
     resetGame({ announceReset: true });
   });
+
+  elements.dialControl.addEventListener("pointerdown", startDialDrag);
+  window.addEventListener("pointermove", onDialPointerMove);
+  window.addEventListener("pointerup", endDialDrag);
+  window.addEventListener("pointercancel", endDialDrag);
 }
 
 function prepareAssets() {
@@ -167,12 +203,19 @@ function queueWord(word) {
   state.roundToken += 1;
   state.phase = "loading";
   state.loadedWord = word;
-  state.spinCount = 0;
-  state.spinGoal = randomInt(4, 6);
-  state.isAnimating = false;
-  updatePhaseUI();
-  setGuide(`"${word}"을(를) 맷돌에 넣고 있어요.`);
+  state.goalTurns = randomInt(4, 6);
+  state.completedTurns = 0;
+  state.totalRotation = 0;
+  state.signedRotation = 0;
+  state.quarterStep = 0;
+  state.hasLeftLoadedFrame = false;
+  state.dialAngle = 0;
+  state.lastPointerAngle = null;
+  state.isDragging = false;
   elements.wishInput.value = "";
+  updateDialHandle();
+  updateUI();
+  setGuide(`"${word}"을(를) 맷돌에 넣고 있어요.`);
   animateWordIntoGrinder(word, state.roundToken);
 }
 
@@ -211,15 +254,15 @@ function animateWordIntoGrinder(word, token) {
     }
 
     showLoadedWord(word);
-    setGrinderImage(state.loadedSrc);
+    setGrinderImage(assetSources.loaded);
     state.phase = "ready";
-    updatePhaseUI();
-    setGuide(`"${word}"이(가) 맷돌 안으로 들어갔어요. 맷돌 돌리기를 눌러 천천히 갈아보세요.`);
+    updateUI();
+    setGuide(`"${word}"이(가) 맷돌 안으로 들어갔어요. 원형 손잡이를 드래그해 천천히 돌려보세요.`);
     announce(`${word}이 맷돌 안으로 들어갔어요.`);
   }, 860);
 }
 
-async function spinOnce() {
+function startDialDrag(event) {
   if (state.phase === "idle") {
     setGuide("먼저 고민, 걱정, 감정을 적고 맷돌에 넣어주세요.");
     return;
@@ -235,72 +278,129 @@ async function spinOnce() {
     return;
   }
 
-  if (state.isAnimating || state.phase !== "ready") {
+  if (state.phase !== "ready" && state.phase !== "spinning") {
     return;
   }
 
-  const token = state.roundToken;
+  event.preventDefault();
+  state.activePointerId = event.pointerId;
+  state.lastPointerAngle = getPointerAngle(event);
+  state.isDragging = true;
   state.phase = "spinning";
-  state.isAnimating = true;
-  elements.loadedWord.classList.add("is-grinding");
-  updatePhaseUI();
-  setGuide("맷돌이 천천히 돌고 있어요.");
+  elements.dialControl.classList.add("is-dragging");
 
-  await playSpinSequence(token);
+  if (typeof elements.dialControl.setPointerCapture === "function") {
+    elements.dialControl.setPointerCapture(event.pointerId);
+  }
 
-  if (token !== state.roundToken) {
+  updateUI();
+  setGuide("손잡이를 돌리는 만큼 맷돌이 함께 움직여요.");
+}
+
+function onDialPointerMove(event) {
+  if (!state.isDragging || event.pointerId !== state.activePointerId) {
     return;
   }
 
-  state.spinCount += 1;
+  const nextAngle = getPointerAngle(event);
+  const dialDelta = shortestAngleDelta(state.lastPointerAngle, nextAngle);
+  state.lastPointerAngle = nextAngle;
+  state.dialAngle = normalizeAngle(nextAngle);
+  updateDialHandle();
+
+  if (Math.abs(dialDelta) < 0.4) {
+    return;
+  }
+
+  const rotationDelta = -dialDelta;
+  state.signedRotation += rotationDelta;
+  state.totalRotation += Math.abs(rotationDelta);
+
+  updateFrameFromRotation();
   updateProgress();
 
-  if (state.spinCount >= state.spinGoal) {
-    resolveGrinding(token);
-    return;
-  }
+  const nextCompletedTurns = Math.min(Math.floor(state.totalRotation / 360), state.goalTurns);
+  if (nextCompletedTurns !== state.completedTurns) {
+    state.completedTurns = nextCompletedTurns;
+    updateProgress();
 
-  state.phase = "ready";
-  state.isAnimating = false;
-  elements.loadedWord.classList.remove("is-grinding");
-  setGrinderImage(state.loadedSrc);
-  updatePhaseUI();
-
-  const remaining = state.spinGoal - state.spinCount;
-  setGuide(`좋아요. ${remaining}번 정도 더 돌리면 긍정 마음 두부가 나와요.`);
-}
-
-async function playSpinSequence(token) {
-  const spinFrames = getSpinFrames();
-  elements.grinderMachine.classList.add("is-spinning");
-
-  for (const frame of spinFrames) {
-    if (token !== state.roundToken) {
-      elements.grinderMachine.classList.remove("is-spinning");
-      return;
+    if (state.completedTurns < state.goalTurns) {
+      const remaining = state.goalTurns - state.completedTurns;
+      setGuide(`${remaining}바퀴 정도 더 돌리면 따뜻한 두부가 완성돼요.`);
     }
-
-    setGrinderImage(frame);
-    await wait(500);
   }
 
-  elements.grinderMachine.classList.remove("is-spinning");
+  if (state.totalRotation >= state.goalTurns * 360) {
+    resolveGrinding();
+  }
 }
 
-function resolveGrinding(token) {
-  if (token !== state.roundToken) {
+function endDialDrag(event) {
+  if (!state.isDragging || event.pointerId !== state.activePointerId) {
     return;
   }
+
+  state.isDragging = false;
+  state.activePointerId = null;
+  state.lastPointerAngle = null;
+  elements.dialControl.classList.remove("is-dragging");
+
+  if (state.phase === "spinning") {
+    state.phase = "ready";
+    updateUI();
+
+    if (state.completedTurns < state.goalTurns) {
+      setGuide("좋아요. 손잡이를 다시 잡고 계속 돌려보세요.");
+    }
+  }
+}
+
+function updateFrameFromRotation() {
+  const nextQuarterStep =
+    state.signedRotation >= 0
+      ? Math.floor(state.signedRotation / 90)
+      : Math.ceil(state.signedRotation / 90);
+
+  if (nextQuarterStep === state.quarterStep) {
+    return;
+  }
+
+  state.quarterStep = nextQuarterStep;
+
+  if (!state.hasLeftLoadedFrame && nextQuarterStep !== 0) {
+    state.hasLeftLoadedFrame = true;
+    elements.loadedWord.classList.add("is-grinding");
+  }
+
+  setGrinderImage(resolveFrameImage(nextQuarterStep));
+  pulseMachine();
+}
+
+function resolveFrameImage(quarterStep) {
+  if (!state.hasLeftLoadedFrame && quarterStep === 0) {
+    return assetSources.loaded;
+  }
+
+  const frames = getSpinFrames();
+  const index = mod(quarterStep, frames.length);
+  return frames[index];
+}
+
+function resolveGrinding() {
+  state.phase = "result";
+  state.isDragging = false;
+  state.activePointerId = null;
+  state.lastPointerAngle = null;
+  state.completedTurns = state.goalTurns;
+  elements.dialControl.classList.remove("is-dragging");
+  elements.loadedWord.classList.remove("is-visible", "is-grinding");
 
   const recipe = findRecipe(state.loadedWord);
-  state.phase = "result";
-  state.isAnimating = false;
-  elements.loadedWord.classList.remove("is-visible", "is-grinding");
-  setGrinderImage(assetSources.idle);
-  spawnSparkles(recipe.color);
   showResult(state.loadedWord, recipe);
-  updatePhaseUI();
-  setGuide("긍정 마음 두부가 완성됐어요. 다음 사람을 위해 초기화 버튼을 눌러주세요.");
+  spawnSparkles(recipe.color);
+  updateUI();
+  updateProgress();
+  setGuide("좋아요. 마음이 부드러운 두부로 완성됐어요. 다음 사람을 위해 초기화해 주세요.");
   announce(`${state.loadedWord}이 ${recipe.positive} 두부로 바뀌었어요.`);
 }
 
@@ -308,44 +408,59 @@ function resetGame({ announceReset = true } = {}) {
   state.roundToken += 1;
   state.phase = "idle";
   state.loadedWord = "";
-  state.spinCount = 0;
-  state.spinGoal = 0;
-  state.isAnimating = false;
+  state.goalTurns = 0;
+  state.completedTurns = 0;
+  state.totalRotation = 0;
+  state.signedRotation = 0;
+  state.quarterStep = 0;
+  state.hasLeftLoadedFrame = false;
+  state.dialAngle = 0;
+  state.activePointerId = null;
+  state.lastPointerAngle = null;
+  state.isDragging = false;
 
   window.clearTimeout(state.announceTimer);
   window.clearTimeout(state.revealWordTimer);
   window.clearTimeout(state.sparkleCleanupTimer);
+  window.clearTimeout(state.joltTimer);
 
   clearFloatingPills();
   clearSparkles();
   hideResult();
   hideLoadedWord();
-  elements.grinderMachine.classList.remove("is-spinning");
+  elements.dialControl.classList.remove("is-dragging");
+  elements.grinderPhotoWrap.classList.remove("is-jolt");
   elements.wishInput.value = "";
   setGrinderImage(assetSources.idle);
+  updateDialHandle();
+  updateUI();
   setGuide(defaultGuide);
-  updatePhaseUI();
 
   if (announceReset) {
     announce("처음 화면으로 돌아왔어요.");
   }
 }
 
-function updatePhaseUI() {
+function updateUI() {
   const isIdle = state.phase === "idle";
-  const showSpinButton = state.phase === "ready" || state.phase === "spinning";
+  const showDial = state.phase === "ready" || state.phase === "spinning";
 
   elements.wishInput.disabled = !isIdle;
   elements.wishSubmit.disabled = !isIdle;
-  elements.spinButton.classList.toggle("is-hidden", !showSpinButton);
-  elements.spinButton.disabled = state.phase !== "ready";
-  elements.spinButton.textContent = state.phase === "spinning" ? "맷돌 도는 중..." : "맷돌 돌리기";
   elements.resetButton.disabled = isIdle;
+  elements.dialControl.classList.toggle("is-hidden", !showDial);
+  elements.dialControl.setAttribute("aria-hidden", showDial ? "false" : "true");
+  elements.dialStatus.classList.toggle("is-hidden", !showDial);
+  elements.dialStatus.textContent =
+    state.phase === "spinning"
+      ? "손잡이를 이어서 돌려 맷돌을 갈아보세요."
+      : "원형 손잡이를 드래그해 맷돌을 돌려보세요.";
   updateProgress();
 }
 
 function updateProgress() {
-  const ratio = state.spinGoal > 0 ? Math.min(state.spinCount / state.spinGoal, 1) : 0;
+  const maxRotation = state.goalTurns > 0 ? state.goalTurns * 360 : 0;
+  const ratio = maxRotation > 0 ? Math.min(state.totalRotation / maxRotation, 1) : 0;
   elements.progressBar.style.width = `${ratio * 100}%`;
 
   if (state.phase === "idle") {
@@ -354,11 +469,21 @@ function updateProgress() {
   }
 
   if (state.phase === "result") {
-    elements.progressLabel.textContent = `완성! ${state.spinGoal} / ${state.spinGoal} 바퀴`;
+    elements.progressLabel.textContent = `완성! ${state.goalTurns} / ${state.goalTurns} 바퀴`;
     return;
   }
 
-  elements.progressLabel.textContent = `${state.spinCount} / ${state.spinGoal} 바퀴`;
+  elements.progressLabel.textContent = `${state.completedTurns} / ${state.goalTurns} 바퀴`;
+}
+
+function updateDialHandle() {
+  const angleRad = (state.dialAngle * Math.PI) / 180;
+  const radiusPercent = 50;
+  const x = 50 + Math.cos(angleRad) * radiusPercent;
+  const y = 50 + Math.sin(angleRad) * radiusPercent;
+
+  elements.dialHandle.style.left = `${x}%`;
+  elements.dialHandle.style.top = `${y}%`;
 }
 
 function showLoadedWord(word) {
@@ -377,9 +502,9 @@ function hideLoadedWord() {
 
 function showResult(fromWord, recipe) {
   elements.resultShape.style.setProperty("--shape-color", recipe.color);
-  elements.resultFrom.textContent = fromWord;
+  elements.resultFrom.textContent = `${fromWord} ->`;
   elements.resultTo.textContent = `${recipe.positive} 두부`;
-  elements.resultMessage.textContent = recipe.message;
+  elements.resultMessage.textContent = formatResultMessage(recipe.message);
   elements.resultBubble.classList.remove("is-hidden");
 }
 
@@ -397,7 +522,7 @@ function spawnSparkles(color) {
     const sparkle = document.createElement("span");
     sparkle.className = "sparkle";
     sparkle.style.left = `${machineRect.left - stageRect.left + machineRect.width * (0.46 + Math.random() * 0.08)}px`;
-    sparkle.style.top = `${machineRect.top - stageRect.top + machineRect.height * (0.42 + Math.random() * 0.08)}px`;
+    sparkle.style.top = `${machineRect.top - stageRect.top + machineRect.height * (0.58 + Math.random() * 0.08)}px`;
     sparkle.style.setProperty("--sparkle-color", color);
     sparkle.style.setProperty("--sparkle-x", `${Math.round(Math.random() * 36 - 18)}px`);
     sparkle.style.setProperty("--sparkle-y", `${Math.round(Math.random() * 26)}px`);
@@ -414,12 +539,23 @@ function clearSparkles() {
   elements.sparkleLayer.innerHTML = "";
 }
 
+function pulseMachine() {
+  elements.grinderPhotoWrap.classList.remove("is-jolt");
+  void elements.grinderPhotoWrap.offsetWidth;
+  elements.grinderPhotoWrap.classList.add("is-jolt");
+
+  window.clearTimeout(state.joltTimer);
+  state.joltTimer = window.setTimeout(() => {
+    elements.grinderPhotoWrap.classList.remove("is-jolt");
+  }, 160);
+}
+
 function getSpinFrames() {
   if (state.spinFrames.length === assetSources.spin.length) {
     return state.spinFrames;
   }
 
-  return [state.loadedSrc, state.loadedSrc, state.loadedSrc, state.loadedSrc];
+  return assetSources.spin;
 }
 
 function setGrinderImage(src) {
@@ -428,6 +564,37 @@ function setGrinderImage(src) {
   }
 
   elements.grinderPhoto.setAttribute("src", src);
+}
+
+function getPointerAngle(event) {
+  const rect = elements.dialControl.getBoundingClientRect();
+  const centerX = rect.left + rect.width / 2;
+  const centerY = rect.top + rect.height / 2;
+  const radians = Math.atan2(event.clientY - centerY, event.clientX - centerX);
+  const degrees = (radians * 180) / Math.PI;
+  return normalizeAngle(degrees);
+}
+
+function shortestAngleDelta(from, to) {
+  let delta = to - from;
+
+  while (delta > 180) {
+    delta -= 360;
+  }
+
+  while (delta < -180) {
+    delta += 360;
+  }
+
+  return delta;
+}
+
+function normalizeAngle(angle) {
+  return mod(angle, 360);
+}
+
+function mod(value, divisor) {
+  return ((value % divisor) + divisor) % divisor;
 }
 
 function setGuide(message) {
@@ -472,10 +639,35 @@ function randomInt(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-function wait(duration) {
-  return new Promise((resolve) => {
-    window.setTimeout(resolve, duration);
-  });
+function formatResultMessage(message, preferredLength = 15) {
+  if (message.length <= preferredLength + 2) {
+    return message;
+  }
+
+  const minIndex = Math.max(8, preferredLength - 5);
+  const maxIndex = Math.min(message.length - 4, preferredLength + 5);
+  let splitIndex = -1;
+  let smallestDistance = Number.POSITIVE_INFINITY;
+
+  for (let index = minIndex; index <= maxIndex; index += 1) {
+    if (message[index] !== " ") {
+      continue;
+    }
+
+    const distance = Math.abs(index - preferredLength);
+    if (distance < smallestDistance) {
+      smallestDistance = distance;
+      splitIndex = index;
+    }
+  }
+
+  if (splitIndex === -1) {
+    splitIndex = preferredLength;
+  }
+
+  const firstLine = message.slice(0, splitIndex).trim();
+  const secondLine = message.slice(splitIndex).trim();
+  return `${firstLine}\n${secondLine}`;
 }
 
 function preloadImage(src) {

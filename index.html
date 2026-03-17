@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Millstone</title>
-    <link rel="stylesheet" href="style.css?v=20260317-2" />
+    <link rel="stylesheet" href="style.css?v=20260317-dial-4" />
   </head>
   <body>
     <main class="experience">
@@ -14,7 +14,6 @@
           <h1>Millstone</h1>
           <button id="resetButton" class="secondary-button title-reset" type="button" disabled>초기화</button>
         </div>
-        <p class="hero-note">맷돌 게임</p>
 
         <form id="wishForm" class="wish-form">
           <label class="sr-only" for="wishInput">고민, 걱정, 감정 입력</label>
@@ -33,15 +32,13 @@
           불안과 걱정을 콩으로 넣으면, 갈아서 편안과 행복을 주는 두부를 드릴게요.
         </p>
 
-        <div class="play-controls">
-          <button id="spinButton" class="action-button is-hidden" type="button">맷돌 돌리기</button>
-        </div>
+        <p id="dialStatus" class="dial-status is-hidden">원형 손잡이를 드래그해 맷돌을 돌려보세요.</p>
 
         <div class="progress-wrap" aria-label="갈림 진행도">
+          <p id="progressLabel" class="progress-label">준비 중</p>
           <div class="progress-track">
             <div id="progressBar" class="progress-bar"></div>
           </div>
-          <p id="progressLabel" class="progress-label">준비 중</p>
         </div>
       </header>
 
@@ -56,6 +53,10 @@
               src="millstone_off_1.png"
               alt="실사 맷돌"
             />
+            <div id="dialControl" class="dial-control is-hidden" aria-hidden="true">
+              <div class="dial-ring"></div>
+              <button id="dialHandle" class="dial-handle" type="button" aria-label="맷돌 손잡이"></button>
+            </div>
             <div id="grinderTarget" class="grinder-target" aria-hidden="true"></div>
             <div id="loadedWord" class="loaded-word" aria-hidden="true"></div>
             <div id="resultBubble" class="result-bubble is-hidden" aria-live="polite">
@@ -75,6 +76,6 @@
     </main>
 
     <div id="liveRegion" class="sr-only" aria-live="polite"></div>
-    <script src="script.js?v=20260317-2"></script>
+    <script src="script.js?v=20260317-dial-2"></script>
   </body>
 </html>
