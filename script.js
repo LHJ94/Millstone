@@ -89,11 +89,13 @@ const fallbackResults = [
 ];
 
 const defaultGuide =
-  "불안과 걱정을 콩으로 넣으면, 갈아서 편안과 행복을 주는 두부를 드릴게요.";
+  "고민과 걱정 콩을 넣으면, 편안과 행복을 주는 두부를 드릴게요.";
+const RESULT_REVEAL_DURATION = 980;
 
 const assetSources = {
   idle: "millstone_off_1.png",
   loaded: "millstone_on.png",
+  miniTofu: "millstone_dubu.png",
   spin: [
     "millstone_off_1.png",
     "millstone_off_2.png",
@@ -121,6 +123,7 @@ const state = {
   revealWordTimer: 0,
   sparkleCleanupTimer: 0,
   joltTimer: 0,
+  resultRevealTimer: 0,
 };
 
 const elements = {
@@ -128,7 +131,6 @@ const elements = {
   wishInput: document.getElementById("wishInput"),
   wishSubmit: document.getElementById("wishSubmit"),
   guideText: document.getElementById("guideText"),
-  dialStatus: document.getElementById("dialStatus"),
   resetButton: document.getElementById("resetButton"),
   progressBar: document.getElementById("progressBar"),
   progressLabel: document.getElementById("progressLabel"),
@@ -154,7 +156,7 @@ bindEvents();
 resetGame({ announceReset: false });
 
 elements.grinderPhoto.addEventListener("error", () => {
-  setGuide("맷돌 이미지 파일을 불러오지 못했어요. 파일 경로를 다시 확인해볼게요.");
+  setGuide("맷돌 이미지 파일을 불러오지 못했어요. 파일 경로를 다시 확인해볼게요.", "active");
 });
 
 function bindEvents() {
@@ -176,6 +178,7 @@ function bindEvents() {
 function prepareAssets() {
   preloadImage(assetSources.idle);
   preloadImage(assetSources.loaded);
+  preloadImage(assetSources.miniTofu);
 
   Promise.all(assetSources.spin.map((src) => probeImage(src))).then((results) => {
     state.spinFrames = assetSources.spin.filter((_, index) => results[index]);
@@ -184,17 +187,17 @@ function prepareAssets() {
 
 function queueWord(word) {
   if (!word) {
-    setGuide("고민, 걱정, 감정을 먼저 적어주세요.");
+    setGuide("고민, 걱정, 감정을 먼저 적어주세요.", "active");
     return;
   }
 
   if (state.phase === "result") {
-    setGuide("다음 사람을 위해 초기화 버튼을 눌러 처음 화면으로 돌아가 주세요.");
+    setGuide("다음 사람을 위해 초기화 버튼을 눌러 처음 화면으로 돌아가 주세요.", "complete");
     return;
   }
 
   if (state.phase !== "idle") {
-    setGuide("지금 들어간 마음을 먼저 끝까지 갈아볼까요?");
+    setGuide("지금 들어간 마음을 먼저 끝까지 갈아볼까요?", "active");
     return;
   }
 
@@ -215,7 +218,7 @@ function queueWord(word) {
   elements.wishInput.value = "";
   updateDialHandle();
   updateUI();
-  setGuide(`"${word}"을(를) 맷돌에 넣고 있어요.`);
+  setGuide(`"${word}"을(를) 맷돌에 넣고 있어요.`, "loading");
   animateWordIntoGrinder(word, state.roundToken);
 }
 
@@ -257,24 +260,27 @@ function animateWordIntoGrinder(word, token) {
     setGrinderImage(assetSources.loaded);
     state.phase = "ready";
     updateUI();
-    setGuide(`"${word}"이(가) 맷돌 안으로 들어갔어요. 원형 손잡이를 드래그해 천천히 돌려보세요.`);
+    setGuide(
+      `"${word}"이(가) 맷돌 안으로 들어갔어요. 원형 손잡이를 드래그해 천천히 돌려보세요.`,
+      "active"
+    );
     announce(`${word}이 맷돌 안으로 들어갔어요.`);
   }, 860);
 }
 
 function startDialDrag(event) {
   if (state.phase === "idle") {
-    setGuide("먼저 고민, 걱정, 감정을 적고 맷돌에 넣어주세요.");
+    setGuide("먼저 고민, 걱정, 감정을 적고 맷돌에 넣어주세요.", "active");
     return;
   }
 
   if (state.phase === "loading") {
-    setGuide("지금 마음이 맷돌 안으로 들어가고 있어요. 잠깐만 기다려주세요.");
+    setGuide("지금 마음이 맷돌 안으로 들어가고 있어요. 잠깐만 기다려주세요.", "loading");
     return;
   }
 
   if (state.phase === "result") {
-    setGuide("긍정 마음 두부가 완성됐어요. 다음 사람을 위해 초기화해 주세요.");
+    setGuide("긍정 마음 두부가 완성됐어요. 다음 사람을 위해 초기화해 주세요.", "complete");
     return;
   }
 
@@ -294,7 +300,7 @@ function startDialDrag(event) {
   }
 
   updateUI();
-  setGuide("손잡이를 돌리는 만큼 맷돌이 함께 움직여요.");
+  setGuide("손잡이를 돌리는 만큼 맷돌이 함께 움직여요.", "active");
 }
 
 function onDialPointerMove(event) {
@@ -326,7 +332,7 @@ function onDialPointerMove(event) {
 
     if (state.completedTurns < state.goalTurns) {
       const remaining = state.goalTurns - state.completedTurns;
-      setGuide(`${remaining}바퀴 정도 더 돌리면 따뜻한 두부가 완성돼요.`);
+      setGuide(`${remaining}바퀴 정도 더 돌리면 따뜻한 두부가 완성돼요.`, "active");
     }
   }
 
@@ -350,7 +356,7 @@ function endDialDrag(event) {
     updateUI();
 
     if (state.completedTurns < state.goalTurns) {
-      setGuide("좋아요. 손잡이를 다시 잡고 계속 돌려보세요.");
+      setGuide("좋아요. 손잡이를 다시 잡고 계속 돌려보세요.", "active");
     }
   }
 }
@@ -397,10 +403,9 @@ function resolveGrinding() {
 
   const recipe = findRecipe(state.loadedWord);
   showResult(state.loadedWord, recipe);
-  spawnSparkles(recipe.color);
   updateUI();
   updateProgress();
-  setGuide("좋아요. 마음이 부드러운 두부로 완성됐어요. 다음 사람을 위해 초기화해 주세요.");
+  setGuide("좋아요. 마음이 부드러운 두부로 완성됐어요. 다음 사람을 위해 초기화해 주세요.", "complete");
   announce(`${state.loadedWord}이 ${recipe.positive} 두부로 바뀌었어요.`);
 }
 
@@ -423,6 +428,7 @@ function resetGame({ announceReset = true } = {}) {
   window.clearTimeout(state.revealWordTimer);
   window.clearTimeout(state.sparkleCleanupTimer);
   window.clearTimeout(state.joltTimer);
+  window.clearTimeout(state.resultRevealTimer);
 
   clearFloatingPills();
   clearSparkles();
@@ -434,7 +440,7 @@ function resetGame({ announceReset = true } = {}) {
   setGrinderImage(assetSources.idle);
   updateDialHandle();
   updateUI();
-  setGuide(defaultGuide);
+  setGuide(defaultGuide, "ambient");
 
   if (announceReset) {
     announce("처음 화면으로 돌아왔어요.");
@@ -450,11 +456,6 @@ function updateUI() {
   elements.resetButton.disabled = isIdle;
   elements.dialControl.classList.toggle("is-hidden", !showDial);
   elements.dialControl.setAttribute("aria-hidden", showDial ? "false" : "true");
-  elements.dialStatus.classList.toggle("is-hidden", !showDial);
-  elements.dialStatus.textContent =
-    state.phase === "spinning"
-      ? "손잡이를 이어서 돌려 맷돌을 갈아보세요."
-      : "원형 손잡이를 드래그해 맷돌을 돌려보세요.";
   updateProgress();
 }
 
@@ -464,16 +465,16 @@ function updateProgress() {
   elements.progressBar.style.width = `${ratio * 100}%`;
 
   if (state.phase === "idle") {
-    elements.progressLabel.textContent = "준비 중";
+    setProgressLabel("준비 중", "loading");
     return;
   }
 
   if (state.phase === "result") {
-    elements.progressLabel.textContent = `완성! ${state.goalTurns} / ${state.goalTurns} 바퀴`;
+    setProgressLabel(`완성! ${state.goalTurns} / ${state.goalTurns} 바퀴`, "complete");
     return;
   }
 
-  elements.progressLabel.textContent = `${state.completedTurns} / ${state.goalTurns} 바퀴`;
+  setProgressLabel(`${state.completedTurns} / ${state.goalTurns} 바퀴`, "active");
 }
 
 function updateDialHandle() {
@@ -505,34 +506,71 @@ function showResult(fromWord, recipe) {
   elements.resultFrom.textContent = `${fromWord} ->`;
   elements.resultTo.textContent = `${recipe.positive} 두부`;
   elements.resultMessage.textContent = formatResultMessage(recipe.message);
+  window.clearTimeout(state.resultRevealTimer);
+  elements.resultBubble.classList.remove("is-revealing");
+  elements.resultBubble.classList.add("is-hidden");
+  void elements.resultBubble.offsetWidth;
   elements.resultBubble.classList.remove("is-hidden");
+  elements.resultBubble.classList.add("is-revealing");
+  window.requestAnimationFrame(() => {
+    spawnSparkles(recipe.color);
+  });
+  state.resultRevealTimer = window.setTimeout(() => {
+    elements.resultBubble.classList.remove("is-revealing");
+  }, RESULT_REVEAL_DURATION);
 }
 
 function hideResult() {
+  window.clearTimeout(state.resultRevealTimer);
+  elements.resultBubble.classList.remove("is-revealing");
   elements.resultBubble.classList.add("is-hidden");
 }
 
 function spawnSparkles(color) {
   clearSparkles();
 
-  const machineRect = elements.grinderMachine.getBoundingClientRect();
+  const bubbleRect = elements.resultBubble.getBoundingClientRect();
   const stageRect = elements.stage.getBoundingClientRect();
+  const originX = bubbleRect.left - stageRect.left + bubbleRect.width / 2;
+  const originY = bubbleRect.top - stageRect.top + bubbleRect.height * 0.34;
 
-  for (let index = 0; index < 12; index += 1) {
+  for (let index = 0; index < 24; index += 1) {
+    const burst = document.createElement("img");
+    const angle = (-150 + (300 / 23) * index + Math.random() * 20) * (Math.PI / 180);
+    const distance = 76 + Math.random() * 120;
+    const burstX = Math.round(Math.cos(angle) * distance);
+    const burstY = Math.round(Math.sin(angle) * distance - 20 - Math.random() * 22);
+
+    burst.className = "tofu-burst";
+    burst.src = assetSources.miniTofu;
+    burst.alt = "";
+    burst.decoding = "async";
+    burst.style.left = `${originX}px`;
+    burst.style.top = `${originY}px`;
+    burst.style.setProperty("--burst-size", `${26 + Math.round(Math.random() * 20)}px`);
+    burst.style.setProperty("--burst-x", `${burstX}px`);
+    burst.style.setProperty("--burst-y", `${burstY}px`);
+    burst.style.setProperty("--burst-scale", `${(0.86 + Math.random() * 0.42).toFixed(2)}`);
+    burst.style.setProperty("--burst-rotate", `${Math.round(Math.random() * 180 - 90)}deg`);
+    burst.style.animationDelay = `${index * 36}ms`;
+    elements.sparkleLayer.appendChild(burst);
+  }
+
+  for (let index = 0; index < 22; index += 1) {
     const sparkle = document.createElement("span");
     sparkle.className = "sparkle";
-    sparkle.style.left = `${machineRect.left - stageRect.left + machineRect.width * (0.46 + Math.random() * 0.08)}px`;
-    sparkle.style.top = `${machineRect.top - stageRect.top + machineRect.height * (0.58 + Math.random() * 0.08)}px`;
+    sparkle.style.left = `${originX + Math.round(Math.random() * 62 - 31)}px`;
+    sparkle.style.top = `${originY + Math.round(Math.random() * 34 - 17)}px`;
     sparkle.style.setProperty("--sparkle-color", color);
-    sparkle.style.setProperty("--sparkle-x", `${Math.round(Math.random() * 36 - 18)}px`);
-    sparkle.style.setProperty("--sparkle-y", `${Math.round(Math.random() * 26)}px`);
+    sparkle.style.setProperty("--sparkle-x", `${Math.round(Math.random() * 200 - 100)}px`);
+    sparkle.style.setProperty("--sparkle-y", `${Math.round(Math.random() * 120 - 46)}px`);
     sparkle.style.animationDelay = `${index * 42}ms`;
     elements.sparkleLayer.appendChild(sparkle);
   }
 
   state.sparkleCleanupTimer = window.setTimeout(() => {
     clearSparkles();
-  }, 1200);
+  }, 3000);
 }
 
 function clearSparkles() {
@@ -597,8 +635,14 @@ function mod(value, divisor) {
   return ((value % divisor) + divisor) % divisor;
 }
 
-function setGuide(message) {
+function setGuide(message, tone = "ambient") {
   elements.guideText.textContent = message;
+  elements.guideText.dataset.tone = tone;
+}
+
+function setProgressLabel(message, tone = "ambient") {
+  elements.progressLabel.textContent = message;
+  elements.progressLabel.dataset.tone = tone;
 }
 
 function announce(message) {
