@@ -473,7 +473,7 @@ function resetGame({ announceReset = true } = {}) {
   updateDialHandle();
   updateUI();
   setGuide(defaultGuide, "ambient");
-  resumeBgmIfIdle();
+  restoreBgmForIdle();
 
   if (announceReset) {
     announce("처음 화면으로 돌아왔어요.");
@@ -721,6 +721,24 @@ function resumeBgmIfIdle() {
     .catch(() => {
       state.bgmPlaying = false;
     });
+}
+
+function restoreBgmForIdle() {
+  if (!elements.bgmAudio || !state.bgmUnlocked) {
+    return;
+  }
+
+  if (state.phase !== "idle") {
+    return;
+  }
+
+  if (!state.bgmPlaying) {
+    resumeBgmIfIdle();
+    return;
+  }
+
+  window.clearTimeout(state.bgmFadeTimer);
+  fadeBgmTo(0.65, 500);
 }
 
 function duckBgm() {
