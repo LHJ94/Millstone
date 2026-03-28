@@ -124,6 +124,11 @@ const state = {
   sparkleCleanupTimer: 0,
   joltTimer: 0,
   resultRevealTimer: 0,
+  bgmUnlocked: false,
+  bgmPlaying: false,
+  bgmFadeTimer: 0,
+  audioUnlocked: false,
+  spinPlaying: false,
 };
 
 const elements = {
@@ -149,6 +154,10 @@ const elements = {
   dialControl: document.getElementById("dialControl"),
   dialHandle: document.getElementById("dialHandle"),
   liveRegion: document.getElementById("liveRegion"),
+  bgmAudio: document.getElementById("bgmAudio"),
+  uiClickAudio: document.getElementById("uiClickAudio"),
+  spinLoopAudio: document.getElementById("spinLoopAudio"),
+  successAudio: document.getElementById("successAudio"),
 };
 
 prepareAssets();
@@ -162,10 +171,12 @@ elements.grinderPhoto.addEventListener("error", () => {
 function bindEvents() {
   elements.wishForm.addEventListener("submit", (event) => {
     event.preventDefault();
+    playUiClick();
     queueWord(elements.wishInput.value.trim());
   });
 
   elements.resetButton.addEventListener("click", () => {
+    playUiClick();
     resetGame({ announceReset: true });
   });
 
@@ -173,6 +184,18 @@ function bindEvents() {
   window.addEventListener("pointermove", onDialPointerMove);
   window.addEventListener("pointerup", endDialDrag);
   window.addEventListener("pointercancel", endDialDrag);
+
+  // BGM unlock requires a user gesture in most browsers.
+  const unlockAudioOnce = () => {
+    unlockAudio();
+    window.removeEventListener("pointerdown", unlockAudioOnce);
+    window.removeEventListener("keydown", unlockAudioOnce);
+    window.removeEventListener("touchstart", unlockAudioOnce);
+  };
+
+  window.addEventListener("pointerdown", unlockAudioOnce, { passive: true });
+  window.addEventListener("keydown", unlockAudioOnce, { passive: true });
+  window.addEventListener("touchstart", unlockAudioOnce, { passive: true });
 }
 
 function prepareAssets() {
@@ -201,6 +224,8 @@ function queueWord(word) {
     return;
   }
 
+  duckBgm();
+  stopSpinLoop();
   hideResult();
   clearSparkles();
   state.roundToken += 1;
@@ -289,11 +314,13 @@ function startDialDrag(event) {
   }
 
   event.preventDefault();
+  playUiClick();
   state.activePointerId = event.pointerId;
   state.lastPointerAngle = getPointerAngle(event);
   state.isDragging = true;
   state.phase = "spinning";
   elements.dialControl.classList.add("is-dragging");
+  startSpinLoop();
 
   if (typeof elements.dialControl.setPointerCapture === "function") {
     elements.dialControl.setPointerCapture(event.pointerId);
@@ -350,6 +377,7 @@ function endDialDrag(event) {
   state.activePointerId = null;
   state.lastPointerAngle = null;
   elements.dialControl.classList.remove("is-dragging");
+  stopSpinLoop();
 
   if (state.phase === "spinning") {
     state.phase = "ready";
@@ -400,9 +428,11 @@ function resolveGrinding() {
   state.completedTurns = state.goalTurns;
   elements.dialControl.classList.remove("is-dragging");
   elements.loadedWord.classList.remove("is-visible", "is-grinding");
+  stopSpinLoop();
 
   const recipe = findRecipe(state.loadedWord);
   showResult(state.loadedWord, recipe);
+  playSuccessSound();
   updateUI();
   updateProgress();
   setGuide("좋아요. 마음이 부드러운 두부로 완성됐어요. 다음 사람을 위해 초기화해 주세요.", "complete");
@@ -429,6 +459,8 @@ function resetGame({ announceReset = true } = {}) {
   window.clearTimeout(state.sparkleCleanupTimer);
   window.clearTimeout(state.joltTimer);
   window.clearTimeout(state.resultRevealTimer);
+  window.clearTimeout(state.bgmFadeTimer);
+  stopSpinLoop();
 
   clearFloatingPills();
   clearSparkles();
@@ -441,6 +473,7 @@ function resetGame({ announceReset = true } = {}) {
   updateDialHandle();
   updateUI();
   setGuide(defaultGuide, "ambient");
+  resumeBgmIfIdle();
 
   if (announceReset) {
     announce("처음 화면으로 돌아왔어요.");
@@ -643,6 +676,149 @@ function setGuide(message, tone = "ambient") {
 function setProgressLabel(message, tone = "ambient") {
   elements.progressLabel.textContent = message;
   elements.progressLabel.dataset.tone = tone;
+}
+
+function unlockAudio() {
+  if (state.audioUnlocked) {
+    return;
+  }
+
+  state.audioUnlocked = true;
+  primeAudioElement(elements.uiClickAudio);
+  primeAudioElement(elements.spinLoopAudio);
+  primeAudioElement(elements.successAudio);
+
+  unlockBgm();
+}
+
+function unlockBgm() {
+  if (!elements.bgmAudio || state.bgmUnlocked) {
+    return;
+  }
+
+  state.bgmUnlocked = true;
+  elements.bgmAudio.volume = 0.0;
+  resumeBgmIfIdle();
+}
+
+function resumeBgmIfIdle() {
+  if (!elements.bgmAudio || !state.bgmUnlocked) {
+    return;
+  }
+
+  if (state.phase !== "idle" || state.bgmPlaying) {
+    return;
+  }
+
+  state.bgmPlaying = true;
+  window.clearTimeout(state.bgmFadeTimer);
+  elements.bgmAudio.currentTime = 0;
+  elements.bgmAudio
+    .play()
+    .then(() => {
+      fadeBgmTo(0.65, 600);
+    })
+    .catch(() => {
+      state.bgmPlaying = false;
+    });
+}
+
+function duckBgm() {
+  if (!elements.bgmAudio || !state.bgmUnlocked || !state.bgmPlaying) {
+    return;
+  }
+
+  window.clearTimeout(state.bgmFadeTimer);
+  fadeBgmTo(0.12, 450);
+}
+
+function fadeBgmTo(targetVolume, duration, onComplete) {
+  const audio = elements.bgmAudio;
+  if (!audio) {
+    return;
+  }
+
+  const startVolume = audio.volume;
+  const startTime = performance.now();
+
+  const step = (now) => {
+    const progress = Math.min((now - startTime) / duration, 1);
+    audio.volume = startVolume + (targetVolume - startVolume) * progress;
+
+    if (progress < 1) {
+      state.bgmFadeTimer = window.requestAnimationFrame(step);
+    } else if (onComplete) {
+      onComplete();
+    }
+  };
+
+  state.bgmFadeTimer = window.requestAnimationFrame(step);
+}
+
+function primeAudioElement(element) {
+  if (!element) {
+    return;
+  }
+
+  const previousVolume = element.volume;
+  element.volume = 0;
+  element
+    .play()
+    .then(() => {
+      element.pause();
+      element.currentTime = 0;
+      element.volume = previousVolume;
+    })
+    .catch(() => {
+      element.volume = previousVolume;
+    });
+}
+
+function playUiClick() {
+  if (!state.audioUnlocked || !elements.uiClickAudio) {
+    return;
+  }
+
+  const click = elements.uiClickAudio.cloneNode(true);
+  click.volume = 0.5;
+  click.play().catch(() => {});
+}
+
+function startSpinLoop() {
+  if (!state.audioUnlocked || !elements.spinLoopAudio || state.spinPlaying) {
+    return;
+  }
+
+  elements.spinLoopAudio.currentTime = 0;
+  elements.spinLoopAudio.volume = 0.25;
+  elements.spinLoopAudio
+    .play()
+    .then(() => {
+      state.spinPlaying = true;
+    })
+    .catch(() => {
+      state.spinPlaying = false;
+    });
+}
+
+function stopSpinLoop() {
+  if (!elements.spinLoopAudio || !state.spinPlaying) {
+    return;
+  }
+
+  elements.spinLoopAudio.pause();
+  elements.spinLoopAudio.currentTime = 0;
+  state.spinPlaying = false;
+}
+
+function playSuccessSound() {
+  if (!state.audioUnlocked || !elements.successAudio) {
+    return;
+  }
+
+  elements.successAudio.currentTime = 0;
+  elements.successAudio.volume = 0.8;
+  elements.successAudio.play().catch(() => {});
 }
 
 function announce(message) {
