@@ -129,6 +129,7 @@ const state = {
   bgmFadeTimer: 0,
   audioUnlocked: false,
   spinPlaying: false,
+  bgmEnabled: true,
 };
 
 const elements = {
@@ -158,6 +159,7 @@ const elements = {
   uiClickAudio: document.getElementById("uiClickAudio"),
   spinLoopAudio: document.getElementById("spinLoopAudio"),
   successAudio: document.getElementById("successAudio"),
+  bgmToggle: document.getElementById("bgmToggle"),
 };
 
 prepareAssets();
@@ -180,6 +182,11 @@ function bindEvents() {
     resetGame({ announceReset: true });
   });
 
+  elements.bgmToggle.addEventListener("click", () => {
+    playUiClick();
+    toggleBgm();
+  });
+
   elements.dialControl.addEventListener("pointerdown", startDialDrag);
   window.addEventListener("pointermove", onDialPointerMove);
   window.addEventListener("pointerup", endDialDrag);
@@ -196,6 +203,8 @@ function bindEvents() {
   window.addEventListener("pointerdown", unlockAudioOnce, { passive: true });
   window.addEventListener("keydown", unlockAudioOnce, { passive: true });
   window.addEventListener("touchstart", unlockAudioOnce, { passive: true });
+
+  syncBgmUi();
 }
 
 function prepareAssets() {
@@ -224,7 +233,9 @@ function queueWord(word) {
     return;
   }
 
-  duckBgm();
+  if (state.bgmEnabled) {
+    duckBgm();
+  }
   stopSpinLoop();
   hideResult();
   clearSparkles();
@@ -689,6 +700,7 @@ function unlockAudio() {
   primeAudioElement(elements.successAudio);
 
   unlockBgm();
+  syncBgmUi();
 }
 
 function unlockBgm() {
@@ -706,7 +718,7 @@ function resumeBgmIfIdle() {
     return;
   }
 
-  if (state.phase !== "idle" || state.bgmPlaying) {
+  if (!state.bgmEnabled || state.phase !== "idle" || state.bgmPlaying) {
     return;
   }
 
@@ -728,6 +740,11 @@ function restoreBgmForIdle() {
     return;
   }
 
+  if (!state.bgmEnabled) {
+    stopBgmImmediately();
+    return;
+  }
+
   if (state.phase !== "idle") {
     return;
   }
@@ -739,6 +756,38 @@ function restoreBgmForIdle() {
 
   window.clearTimeout(state.bgmFadeTimer);
   fadeBgmTo(0.65, 500);
+}
+
+function toggleBgm() {
+  state.bgmEnabled = !state.bgmEnabled;
+  syncBgmUi();
+
+  if (!state.bgmEnabled) {
+    stopBgmImmediately();
+    return;
+  }
+
+  resumeBgmIfIdle();
+}
+
+function stopBgmImmediately() {
+  if (!elements.bgmAudio || !state.bgmUnlocked) {
+    return;
+  }
+
+  window.clearTimeout(state.bgmFadeTimer);
+  elements.bgmAudio.pause();
+  elements.bgmAudio.currentTime = 0;
+  state.bgmPlaying = false;
+}
+
+function syncBgmUi() {
+  if (!elements.bgmToggle) {
+    return;
+  }
+
+  elements.bgmToggle.textContent = state.bgmEnabled ? "BGM ON" : "BGM OFF";
+  elements.bgmToggle.setAttribute("aria-pressed", state.bgmEnabled ? "true" : "false");
 }
 
 function duckBgm() {

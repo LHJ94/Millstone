@@ -12,7 +12,12 @@
         <p class="eyebrow">dubu dongari</p>
         <div class="title-row">
           <h1>Millstone</h1>
-          <button id="resetButton" class="secondary-button title-reset" type="button" disabled>초기화</button>
+          <div class="title-actions">
+            <button id="resetButton" class="secondary-button title-reset" type="button" disabled>초기화</button>
+            <button id="bgmToggle" class="secondary-button title-reset" type="button" aria-pressed="true">
+              BGM ON
+            </button>
+          </div>
         </div>
 
         <form id="wishForm" class="wish-form">
@@ -78,6 +83,6 @@
     <audio id="uiClickAudio" src="ui_click.wav" preload="auto"></audio>
     <audio id="spinLoopAudio" src="spin_loop.wav" preload="auto" loop></audio>
     <audio id="successAudio" src="success_sound.wav" preload="auto"></audio>
-    <script src="script.js?v=20260328-audio-1"></script>
+    <script src="script.js?v=20260329-bgm-toggle-1"></script>
   </body>
 </html>
